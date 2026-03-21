@@ -10,9 +10,10 @@ def calculate_match_score(student_skills: list, hackathon_requirements: str) -> 
     """
     Evaluates a student's skills against hackathon requirements using Groq Llama-3 API synchronously.
     """
-    client = Groq(
-        api_key=os.environ["GROQ_API_KEY"],
-    )
+    groq_key = os.getenv("GROQ_API_KEY")
+    if not groq_key:
+        return {"score": 0, "reason": "AI service not configured on server."}
+    client = Groq(api_key=groq_key)
     
     skills_str = ', '.join(student_skills) if student_skills else "No skills listed yet"
     
