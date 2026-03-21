@@ -1,0 +1,35 @@
+# =====================
+#   SECRETS — NEVER COMMIT
+# =====================
+**/.env
+backend/service-account.json
+backend/universe.json
+backend/groq_error.txt
+backend/out.txt
+antigravity_state.json
+
+# Python
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
