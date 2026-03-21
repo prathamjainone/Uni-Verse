@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MessageSquare, ArrowUp, Share2, PlusCircle, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import API_URL from '../api';
 import CreatePostModal from '../components/CreatePostModal';
 
 export default function Home() {
@@ -11,7 +12,7 @@ export default function Home() {
   const { user, login } = useAuth();
 
   const fetchPosts = () => {
-    fetch('http://localhost:8000/api/community')
+    fetch(`${API_URL}/api/community`)
       .then(res => res.json())
       .then(data => setPosts(data))
       .catch(err => console.error("API error", err));
@@ -32,7 +33,7 @@ export default function Home() {
     };
 
     try {
-      const res = await fetch('http://localhost:8000/api/community', {
+      const res = await fetch(`${API_URL}/api/community`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -48,7 +49,7 @@ export default function Home() {
 
     try {
       // Optimistic update assumes success is too complex with the toggle. Let's just await.
-      const res = await fetch(`http://localhost:8000/api/community/${postId}/upvote`, {
+      const res = await fetch(`${API_URL}/api/community/${postId}/upvote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.uid })
@@ -68,7 +69,7 @@ export default function Home() {
     if (!text?.trim()) return;
 
     try {
-      const res = await fetch(`http://localhost:8000/api/community/${postId}/comments`, {
+      const res = await fetch(`${API_URL}/api/community/${postId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.uid, user_name: user.display_name, text })
@@ -86,7 +87,7 @@ export default function Home() {
   const handleDelete = async (postId) => {
     if (!window.confirm("Are you sure you want to delete this post?")) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/community/${postId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/api/community/${postId}`, { method: 'DELETE' });
       if (res.ok) fetchPosts();
     } catch(err) {
       console.error("Failed to delete post", err);

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup, signOut as firebaseSignOut, onAuthStateChanged } from 'firebase/auth';
+import API_URL from '../api';
 
 const AuthContext = createContext();
 
@@ -22,7 +23,7 @@ export function AuthProvider({ children }) {
         let profileData = {};
         let hasProfile = false;
         try {
-          const res = await fetch(`http://localhost:8000/api/users/${currentUser.uid}`);
+          const res = await fetch(`${API_URL}/api/users/${currentUser.uid}`);
           if (res.ok) {
             const data = await res.json();
             hasProfile = true;

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Rocket, GraduationCap, Github, Briefcase, Plus, X } from 'lucide-react';
+import API_URL from '../api';
 
 export default function Onboarding() {
   const { user, updateUser } = useAuth();
@@ -46,7 +47,7 @@ export default function Onboarding() {
     };
 
     try {
-      const res = await fetch('http://localhost:8000/api/users/profile', {
+      const res = await fetch(`${API_URL}/api/users/profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

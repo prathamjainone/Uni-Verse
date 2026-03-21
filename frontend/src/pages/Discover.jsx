@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Users, PlusCircle, MessageSquare, Trash2, Sparkles, ChevronDown, ChevronUp, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import CreateProjectModal from '../components/CreateProjectModal';
+import API_URL from '../api';
 
 export default function Discover() {
   const [projects, setProjects] = useState([]);
@@ -17,7 +18,7 @@ export default function Discover() {
   const { user, login } = useAuth();
 
   const fetchProjects = () => {
-    fetch('http://localhost:8000/api/projects')
+    fetch(`${API_URL}/api/projects`)
       .then(res => res.json())
       .then(data => setProjects(data))
       .catch(err => console.error("API error", err));
@@ -37,7 +38,7 @@ export default function Discover() {
     };
 
     try {
-      const res = await fetch('http://localhost:8000/api/projects', {
+      const res = await fetch(`${API_URL}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -55,7 +56,7 @@ export default function Discover() {
     if (!text?.trim()) return;
 
     try {
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/comments`, {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.uid, user_name: user.display_name, text })
@@ -73,7 +74,7 @@ export default function Discover() {
   const handleJoin = async (projectId) => {
     if (!user) return login();
     try {
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/join`, {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.uid })
@@ -90,7 +91,7 @@ export default function Discover() {
   const handleDelete = async (projectId) => {
     if (!window.confirm("Are you sure you want to delete this project?")) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/api/projects/${projectId}`, { method: 'DELETE' });
       if (res.ok) fetchProjects();
     } catch(err) {
       console.error("Failed to delete project", err);
@@ -106,7 +107,7 @@ export default function Discover() {
 
     setMatchingLoader(projectId);
     try {
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/match`, {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -273,7 +274,7 @@ export default function Discover() {
                         const isOpen = !membersOpen[proj.id];
                         setMembersOpen(prev => ({...prev, [proj.id]: isOpen}));
                         if (isOpen && !membersData[proj.id]) {
-                          const res = await fetch(`http://localhost:8000/api/projects/${proj.id}/members`);
+                          const res = await fetch(`${API_URL}/api/projects/${proj.id}/members`);
                           const data = await res.json();
                           if (data.success) setMembersData(prev => ({...prev, [proj.id]: data.members}));
                         }

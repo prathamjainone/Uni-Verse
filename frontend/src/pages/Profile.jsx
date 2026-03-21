@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import API_URL from '../api';
 import { Rocket, GraduationCap, Github, Briefcase, Plus, X } from 'lucide-react';
 
 export default function Profile() {
@@ -18,7 +19,7 @@ export default function Profile() {
 
   useEffect(() => {
     if (user) {
-      fetch(`http://localhost:8000/api/users/${user.uid}`)
+      fetch(`${API_URL}/api/users/${user.uid}`)
         .then(res => res.json())
         .then(data => {
           if (data.id) { // Not a 404
@@ -66,7 +67,7 @@ export default function Profile() {
     };
 
     try {
-      const res = await fetch('http://localhost:8000/api/users/profile', {
+      const res = await fetch(`${API_URL}/api/users/profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
