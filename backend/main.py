@@ -8,18 +8,11 @@ app = FastAPI(title="Uni-Verse API", description="Backend for Uni-Verse team for
 # Initialize Firebase on startup (gracefully falls back to Local JSON persist)
 init_firebase()
 
-# Configure CORS — explicit origins required when credentials are involved
-import os
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-# Always include the Vercel deployment
-allowed_origins += [
-    "https://uni-verse-lake.vercel.app",
-    "https://uni-verse.vercel.app",
-]
+# Configure CORS — no credentials (we use JSON not cookies) so wildcard is valid
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
