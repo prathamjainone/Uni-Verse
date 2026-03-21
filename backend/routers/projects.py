@@ -112,7 +112,7 @@ def get_project_members(project_id: str):
     return {"success": False, "error": "Project not found"}
 
 @router.post("/{project_id}/match")
-async def match_project(project_id: str, payload: dict):
+def match_project(project_id: str, payload: dict):
     from database import get_document
     from services.ai_matcher import calculate_match_score
 

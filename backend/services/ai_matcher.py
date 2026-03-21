@@ -13,7 +13,7 @@ def calculate_match_score(student_skills: list, hackathon_requirements: str) -> 
     groq_key = os.getenv("GROQ_API_KEY")
     if not groq_key:
         return {"score": 0, "reason": "AI service not configured on server."}
-    client = Groq(api_key=groq_key)
+    client = Groq(api_key=groq_key, timeout=15.0)  # 15s hard timeout
     
     skills_str = ', '.join(student_skills) if student_skills else "No skills listed yet"
     
@@ -35,7 +35,7 @@ def calculate_match_score(student_skills: list, hackathon_requirements: str) -> 
                 {"role": "system", "content": "You are a Matchmaker AI. Respond ONLY with a raw JSON object with keys 'score' (integer) and 'reason' (single sentence string, no newlines)."},
                 {"role": "user", "content": prompt}
             ],
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             temperature=0.2
         )
         
