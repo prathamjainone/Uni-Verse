@@ -23,12 +23,57 @@ def get_all_projects():
     docs_sorted = sorted(docs, key=lambda x: x.get('upvotes', 0), reverse=True)
     return [ProjectBase(**doc) for doc in docs_sorted]
     
+@router.get("/{project_id}", response_model=dict)
+def get_single_project(project_id: str):
+    from database import get_document
+    proj = get_document('projects', project_id)
+    if not proj:
+        return {"success": False, "error": "Project not found"}
+    
+    # Resolve members
+    member_uids = proj.get("members", [])
+    members_resolved = []
+    for uid in member_uids:
+        profile = get_document('users', uid)
+        if profile:
+            members_resolved.append({
+                "uid": uid,
+                "name": profile.get("display_name", "Unknown"),
+                "email": profile.get("email", "No email"),
+                "branch": profile.get("branch", ""),
+                "skills": profile.get("skills", []),
+                "bio": profile.get("bio", "")
+            })
+        else:
+            members_resolved.append({"uid": uid, "name": "Unknown", "email": "No profile yet", "branch": "", "skills": []})
+            
+    # Resolve join requests
+    request_uids = proj.get("join_requests", [])
+    requests_resolved = []
+    for uid in request_uids:
+        profile = get_document('users', uid)
+        if profile:
+            requests_resolved.append({
+                "uid": uid,
+                "name": profile.get("display_name", "Unknown"),
+                "email": profile.get("email", "No email"),
+                "branch": profile.get("branch", ""),
+                "skills": profile.get("skills", [])
+            })
+        else:
+            requests_resolved.append({"uid": uid, "name": "Unknown", "email": "No profile yet", "branch": "", "skills": []})
+
+    proj["members_info"] = members_resolved
+    proj["join_requests_info"] = requests_resolved
+    return {"success": True, "project": proj}
+
 @router.post("/", response_model=ProjectBase)
 def create_project(project: ProjectBase):
     data = project.model_dump(exclude={'id'})
     data['created_at'] = project.created_at.strftime('%Y-%m-%dT%H:%M:%S')
     data['upvoted_by'] = []
     data['comments'] = []
+    data['join_requests'] = []
     new_id = create_document('projects', data)
     project.id = new_id
     return project
@@ -78,15 +123,61 @@ def join_project(project_id: str, payload: JoinRequest):
     for doc in docs:
         if doc.get("id") == project_id:
             members = doc.get("members", [])
+            join_requests = doc.get("join_requests", [])
             
+            # If they are already a member, they leave
             if payload.user_id in members:
                 members.remove(payload.user_id)
+                update_document('projects', project_id, {"members": members})
+                return {"success": True, "status": "left", "members": members}
             else:
-                members.append(payload.user_id)
+                # Toggle join request
+                if payload.user_id in join_requests:
+                    join_requests.remove(payload.user_id)
+                    status = "request_cancelled"
+                else:
+                    join_requests.append(payload.user_id)
+                    status = "requested"
                 
-            update_document('projects', project_id, {"members": members})
-            return {"success": True, "members": members}
+                update_document('projects', project_id, {"join_requests": join_requests})
+                return {"success": True, "status": status, "join_requests": join_requests}
+                
     return {"success": False, "error": "Project not found"}
+
+@router.post("/{project_id}/requests/{user_id}/accept")
+def accept_join_request(project_id: str, user_id: str):
+    from database import get_document
+    proj = get_document('projects', project_id)
+    if not proj:
+        return {"success": False, "error": "Project not found"}
+        
+    members = proj.get("members", [])
+    join_requests = proj.get("join_requests", [])
+    
+    if user_id in join_requests:
+        join_requests.remove(user_id)
+        if user_id not in members:
+            members.append(user_id)
+        update_document('projects', project_id, {"members": members, "join_requests": join_requests})
+        return {"success": True}
+        
+    return {"success": False, "error": "User not in requests"}
+
+@router.post("/{project_id}/requests/{user_id}/reject")
+def reject_join_request(project_id: str, user_id: str):
+    from database import get_document
+    proj = get_document('projects', project_id)
+    if not proj:
+        return {"success": False, "error": "Project not found"}
+        
+    join_requests = proj.get("join_requests", [])
+    
+    if user_id in join_requests:
+        join_requests.remove(user_id)
+        update_document('projects', project_id, {"join_requests": join_requests})
+        return {"success": True}
+        
+    return {"success": False, "error": "User not in requests"}
 
 @router.get("/{project_id}/members")
 def get_project_members(project_id: str):

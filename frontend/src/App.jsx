@@ -5,8 +5,11 @@ import Home from './pages/Home';
 import Discover from './pages/Discover';
 import Onboarding from './pages/Onboarding';
 import Profile from './pages/Profile';
+import ProjectDetails from './pages/ProjectDetails';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useLocation, Navigate } from 'react-router-dom';
+
+import { AnimatePresence, motion } from 'framer-motion';
 
 function RouterGuard({ children }) {
   const { user } = useAuth();
@@ -17,6 +20,23 @@ function RouterGuard({ children }) {
   }
   
   return children;
+}
+
+function AnimatedRoutes() {
+  const location = useLocation();
+  
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}><Landing /></motion.div>} />
+        <Route path="/community" element={<motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}><Home /></motion.div>} />
+        <Route path="/discover" element={<motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}><Discover /></motion.div>} />
+        <Route path="/onboarding" element={<motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}><Onboarding /></motion.div>} />
+        <Route path="/profile" element={<motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}><Profile /></motion.div>} />
+        <Route path="/projects/:id" element={<motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}}><ProjectDetails /></motion.div>} />
+      </Routes>
+    </AnimatePresence>
+  );
 }
 
 export default function App() {
@@ -32,13 +52,7 @@ export default function App() {
           <Navbar />
           <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <RouterGuard>
-              <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route path="/community" element={<Home />} />
-                <Route path="/discover" element={<Discover />} />
-                <Route path="/onboarding" element={<Onboarding />} />
-                <Route path="/profile" element={<Profile />} />
-              </Routes>
+              <AnimatedRoutes />
             </RouterGuard>
           </main>
         </div>

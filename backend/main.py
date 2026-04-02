@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from firebase import init_firebase
-from routers import projects, community, users
+from routers import projects, community, users, chat
 
 app = FastAPI(title="Uni-Verse API", description="Backend for Uni-Verse team formation system")
 
@@ -20,6 +20,7 @@ app.add_middleware(
 app.include_router(projects.router)
 app.include_router(community.router)
 app.include_router(users.router)
+app.include_router(chat.router)
 
 @app.get("/")
 def read_root():
