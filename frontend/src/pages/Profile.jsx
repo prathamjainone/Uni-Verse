@@ -15,6 +15,7 @@ export default function Profile() {
   const [skillInput, setSkillInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncingGithub, setSyncingGithub] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
@@ -51,6 +52,42 @@ export default function Profile() {
 
   const removeSkill = (skillToRemove) => {
     setSkills(skills.filter(s => s !== skillToRemove));
+  };
+
+  const handleGithubSync = async () => {
+    if (!formData.github) return;
+    
+    // Extract username from URL or raw input
+    let username = formData.github.trim();
+    if (username.includes('github.com/')) {
+        username = username.split('github.com/')[1].split('/')[0];
+    }
+    
+    if (!username) return;
+
+    setSyncingGithub(true);
+    try {
+      const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100`);
+      if (!res.ok) throw new Error("Could not fetch repos");
+      const repos = await res.json();
+      
+      const languages = new Set();
+      repos.forEach(repo => {
+        if (repo.language) languages.add(repo.language);
+      });
+      
+      const newSkills = Array.from(languages);
+      const combined = new Set([...skills, ...newSkills]);
+      
+      setSkills(Array.from(combined));
+      setSuccessMsg(`Synced ${newSkills.length} programming languages from GitHub!`);
+      setTimeout(() => setSuccessMsg(''), 5000);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to sync GitHub. Make sure the username is correct.");
+    } finally {
+      setSyncingGithub(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -134,10 +171,22 @@ export default function Profile() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-              <Github size={16} className="text-slate-400" /> GitHub URL (Optional)
+            <label className="text-sm font-semibold text-slate-300 flex items-center justify-between">
+              <span className="flex items-center gap-2"><Github size={16} className="text-slate-400" /> GitHub URL or Username</span>
+              {formData.github && (
+                 <button 
+                   type="button" 
+                   onClick={handleGithubSync}
+                   disabled={syncingGithub}
+                   className="text-xs font-bold text-slate-800 bg-white hover:bg-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all"
+                 >
+                    {syncingGithub ? <div className="w-3 h-3 border-2 border-black/20 border-t-black rounded-full animate-spin"></div> : <Rocket size={12} />}
+                    {syncingGithub ? 'Syncing...' : 'Auto-Sync Skills'}
+                 </button>
+              )}
             </label>
-            <input type="url" placeholder="https://github.com/username" value={formData.github} onChange={e => setFormData({...formData, github: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-slate-500 transition-colors" />
+            <input type="text" placeholder="username or https://github.com/..." value={formData.github} onChange={e => setFormData({...formData, github: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-slate-500 transition-colors" />
+            <p className="text-[10px] text-slate-500">Syncing will analyze your public repositories and automatically add your top languages to your Skills.</p>
           </div>
 
           <div className="space-y-2">
