@@ -24,10 +24,15 @@ function VideoPlayer({ stream, muted, label, isScreenShare }) {
 
 export default function WarRoomChat({ project, user }) {
   const projectId = project.id;
-  // --- Chat & Notes State ---
-  const [messages, setMessages] = useState([]);
+  // --- Chat & Notes State (Persisted) ---
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem(`warroom_msgs_${projectId}`);
+    return saved ? JSON.parse(saved) : [];
+  });
   const [inputText, setInputText] = useState("");
-  const [sharedNotes, setSharedNotes] = useState("");
+  const [sharedNotes, setSharedNotes] = useState(() => {
+    return localStorage.getItem(`warroom_notes_${projectId}`) || "";
+  });
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef(null);
   const socketRef = useRef(null);
@@ -40,7 +45,11 @@ export default function WarRoomChat({ project, user }) {
   const localStreamRef = useRef(null);
   const peerConnections = useRef({});
 
-  const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+  const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+
+  // --- Persistence Hooks ---
+  useEffect(() => { localStorage.setItem(`warroom_msgs_${projectId}`, JSON.stringify(messages)); }, [messages, projectId]);
+  useEffect(() => { localStorage.setItem(`warroom_notes_${projectId}`, sharedNotes); }, [sharedNotes, projectId]);
 
   // --- WebSocket Setup ---
   useEffect(() => {
@@ -166,40 +175,52 @@ export default function WarRoomChat({ project, user }) {
 
   const shareScreen = async () => {
     try {
-      const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" } });
       const screenTrack = displayStream.getVideoTracks()[0];
 
+      // Broadcast new track to all existing peers
       Object.values(peerConnections.current).forEach(pc => {
-        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) sender.replaceTrack(screenTrack);
+        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) {
+            sender.replaceTrack(screenTrack).catch(e => console.error("ReplaceTrack Error", e));
+        }
       });
 
+      // Update local view
       if (localStreamRef.current) {
         const newStream = new MediaStream([screenTrack]);
         const audioTracks = localStreamRef.current.getAudioTracks();
         if (audioTracks.length > 0) newStream.addTrack(audioTracks[0]);
         setLocalStream(newStream);
+        localStreamRef.current = newStream; // Important so new joiners get the screen!
       }
       setIsScreenSharing(true);
 
-      screenTrack.onended = async () => {
-         setIsScreenSharing(false);
-         try {
-           const camStream = await navigator.mediaDevices.getUserMedia({ video: true });
-           const camTrack = camStream.getVideoTracks()[0];
-           Object.values(peerConnections.current).forEach(pc => {
-             const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-             if (sender) sender.replaceTrack(camTrack);
-           });
-           if (localStreamRef.current) {
-             const restoredStream = new MediaStream([camTrack]);
-             const audioTracks = localStreamRef.current.getAudioTracks();
-             if (audioTracks.length > 0) restoredStream.addTrack(audioTracks[0]);
-             setLocalStream(restoredStream);
-           }
-         } catch(e) {}
+      screenTrack.onended = () => {
+         stopScreenShare();
       };
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error("Screen Share Failed", err); }
+  };
+
+  const stopScreenShare = async () => {
+     setIsScreenSharing(false);
+     try {
+       const camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+       const camTrack = camStream.getVideoTracks()[0];
+       
+       Object.values(peerConnections.current).forEach(pc => {
+         const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+         if (sender) sender.replaceTrack(camTrack).catch(e => console.error(e));
+       });
+       
+       if (localStreamRef.current) {
+         const restoredStream = new MediaStream([camTrack]);
+         const audioTracks = localStreamRef.current.getAudioTracks();
+         if (audioTracks.length > 0) restoredStream.addTrack(audioTracks[0]);
+         setLocalStream(restoredStream);
+         localStreamRef.current = restoredStream;
+       }
+     } catch(e) { console.error("Restore Camera Failed", e); }
   };
 
   const leaveHuddle = () => {
@@ -274,9 +295,15 @@ export default function WarRoomChat({ project, user }) {
               </button>
             ) : (
               <>
-                <button onClick={shareScreen} disabled={isScreenSharing} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-600/50 text-white text-xs font-bold rounded-lg transition-all">
-                  <Monitor size={14} /> {isScreenSharing ? 'Sharing Screen' : 'Present'}
-                </button>
+                {!isScreenSharing ? (
+                   <button onClick={shareScreen} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-lg transition-all">
+                     <Monitor size={14} /> Present Screen
+                   </button>
+                ) : (
+                   <button onClick={stopScreenShare} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg transition-all">
+                     <Video size={14} /> Back to Camera
+                   </button>
+                )}
                 <button onClick={leaveHuddle} className="flex-none p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-all border border-red-500/30">
                   <PhoneOff size={16} />
                 </button>
