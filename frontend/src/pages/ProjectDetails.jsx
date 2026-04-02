@@ -46,6 +46,8 @@ export default function ProjectDetails() {
 
   useEffect(() => {
     fetchProject();
+    const intervalId = setInterval(fetchProject, 5000);
+    return () => clearInterval(intervalId);
   }, [id]);
 
   const handleAddComment = async () => {

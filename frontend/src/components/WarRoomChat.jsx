@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, Terminal, MessageSquare, Video, VideoOff, PhoneOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import API_URL from '../api';
 
 // --- Small Helper for Video ---
 function VideoPlayer({ stream, muted, label }) {
@@ -41,9 +42,9 @@ export default function WarRoomChat({ project, user }) {
 
   // --- WebSocket Setup ---
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname === 'localhost' ? 'localhost:8000' : window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/chat/${projectId}`;
+    // Dynamically map HTTP API_URL to WS protocol
+    const wsBase = API_URL.replace(/^http/, 'ws');
+    const wsUrl = `${wsBase}/ws/chat/${projectId}`;
 
     const socket = new WebSocket(wsUrl);
     socketRef.current = socket;
