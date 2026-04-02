@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
   Users, MessageSquare, ArrowLeft, Sparkles, 
-  Send, Mail, Trash2, Github, ExternalLink
+  Send, Mail, Trash2, Github, ExternalLink, X, Star, BookOpen, Code, BarChart3
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, 
@@ -24,6 +24,11 @@ export default function ProjectDetails() {
   const [matchResult, setMatchResult] = useState(null);
   const [isMatching, setIsMatching] = useState(false);
   const [activeTab, setActiveTab] = useState("discussion"); // discussion or warroom
+
+  // --- GitHub Intel Modal State ---
+  const [intelModal, setIntelModal] = useState(null); // { name, github, ... } or null
+  const [intelData, setIntelData] = useState(null);
+  const [intelLoading, setIntelLoading] = useState(false);
 
   const isMember = project?.members?.includes(user?.uid);
   const isRequested = project?.join_requests?.includes(user?.uid);
@@ -137,6 +142,62 @@ export default function ProjectDetails() {
       if (res.ok) fetchProject();
     } catch (err) {
       console.error("Failed to reject request", err);
+    }
+  };
+
+  const handleRemoveMember = async (memberUid) => {
+    if (!window.confirm("Remove this member from the project?")) return;
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${id}/members/${memberUid}`, { method: 'DELETE' });
+      if (res.ok) fetchProject();
+    } catch(err) {
+      console.error("Failed to remove member", err);
+    }
+  };
+
+  // --- GitHub Intel ---
+  const openGithubIntel = async (person) => {
+    let username = person.github || '';
+    if (!username) { alert('This user has not linked a GitHub account.'); return; }
+    if (username.includes('github.com/')) username = username.split('github.com/')[1].split('/')[0];
+    username = username.replace(/\/$/, '');
+    if (!username) { alert('Invalid GitHub username.'); return; }
+
+    setIntelModal(person);
+    setIntelData(null);
+    setIntelLoading(true);
+
+    try {
+      const [userRes, reposRes] = await Promise.all([
+        fetch(`https://api.github.com/users/${username}`),
+        fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`)
+      ]);
+      if (!userRes.ok) throw new Error('User not found');
+      const userData = await userRes.json();
+      const reposData = reposRes.ok ? await reposRes.json() : [];
+
+      const totalStars = reposData.reduce((sum, r) => sum + (r.stargazers_count || 0), 0);
+      const languages = {};
+      reposData.forEach(r => { if (r.language) languages[r.language] = (languages[r.language] || 0) + 1; });
+      const topLangs = Object.entries(languages).sort((a,b) => b[1] - a[1]).slice(0, 8);
+      const topRepos = reposData.filter(r => !r.fork).sort((a,b) => (b.stargazers_count || 0) - (a.stargazers_count || 0)).slice(0, 5);
+
+      setIntelData({
+        avatar: userData.avatar_url,
+        login: userData.login,
+        bio: userData.bio,
+        publicRepos: userData.public_repos,
+        followers: userData.followers,
+        following: userData.following,
+        totalStars,
+        topLangs,
+        topRepos,
+        profileUrl: userData.html_url
+      });
+    } catch (err) {
+      setIntelData({ error: err.message });
+    } finally {
+      setIntelLoading(false);
     }
   };
 
@@ -362,7 +423,7 @@ export default function ProjectDetails() {
                   <Users size={16} className="text-teal-400" /> Current Team
                 </h4>
                 <span className="px-2 py-0.5 bg-teal-500/10 text-teal-400 text-[10px] font-bold rounded-lg border border-teal-500/20">
-                  {project.members_info?.length || 0}/5 Slots
+                  {project.members_info?.length || 0} Members
                 </span>
              </div>
 
@@ -376,7 +437,17 @@ export default function ProjectDetails() {
                       <p className="text-sm font-bold text-white leading-none mb-1">{m.name} {m.uid === project.owner_uid && <span className="text-[10px] text-teal-500 font-black ml-1">OWNER</span>}</p>
                       <p className="text-[10px] text-slate-500 truncate">{m.branch || 'University Student'}</p>
                     </div>
-                    <button className="text-slate-600 hover:text-white transition-colors group-hover:scale-110">
+                    {user && project.owner_uid === user.uid && m.github && (
+                      <button onClick={() => openGithubIntel(m)} className="text-emerald-500/40 hover:text-emerald-400 transition-colors group-hover:scale-110 ml-1" title="GitHub Intel">
+                        <Github size={14} />
+                      </button>
+                    )}
+                    {user && project.owner_uid === user.uid && m.uid !== project.owner_uid && (
+                      <button onClick={() => handleRemoveMember(m.uid)} className="text-red-500/50 hover:text-red-400 transition-colors group-hover:scale-110 ml-1" title="Remove Member">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <button className="text-slate-600 hover:text-white transition-colors group-hover:scale-110 ml-1">
                       <Mail size={14} />
                     </button>
                   </div>
@@ -424,6 +495,11 @@ export default function ProjectDetails() {
                         <p className="text-sm font-bold text-white leading-none mb-1">{req.name}</p>
                         <p className="text-[10px] text-slate-500 truncate">{req.branch || 'University Student'}</p>
                       </div>
+                      {req.github && (
+                        <button onClick={() => openGithubIntel(req)} className="text-emerald-500/40 hover:text-emerald-400 transition-colors ml-auto" title="GitHub Intel">
+                          <Github size={14} />
+                        </button>
+                      )}
                     </div>
                     
                     {req.skills && req.skills.length > 0 && (
@@ -462,6 +538,128 @@ export default function ProjectDetails() {
           </div>
         </div>
       </div>
+
+      {/* GitHub Intel Modal */}
+      <AnimatePresence>
+        {intelModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            onClick={() => setIntelModal(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+            >
+              {/* Modal Header */}
+              <div className="p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border-b border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-500/20 rounded-xl">
+                    <BarChart3 size={18} className="text-emerald-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white uppercase tracking-widest">GitHub Intel</h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{intelModal.name}</p>
+                  </div>
+                </div>
+                <button onClick={() => setIntelModal(null)} className="p-1.5 text-slate-500 hover:text-white transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 max-h-[70vh] overflow-y-auto">
+                {intelLoading ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <div className="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+                    <p className="text-xs text-slate-500">Fetching GitHub data...</p>
+                  </div>
+                ) : intelData?.error ? (
+                  <div className="text-center py-8">
+                    <p className="text-red-400 text-sm">⚠ {intelData.error}</p>
+                  </div>
+                ) : intelData ? (
+                  <div className="space-y-5">
+                    {/* Profile Card */}
+                    <div className="flex items-center gap-4 p-4 bg-black/30 rounded-xl border border-white/5">
+                      <img src={intelData.avatar} alt="" className="w-14 h-14 rounded-full border-2 border-emerald-500/30" />
+                      <div className="flex-1">
+                        <a href={intelData.profileUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-black text-white hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                          @{intelData.login} <ExternalLink size={10} />
+                        </a>
+                        {intelData.bio && <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{intelData.bio}</p>}
+                      </div>
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: 'Repos', value: intelData.publicRepos, icon: BookOpen, color: 'text-indigo-400' },
+                        { label: 'Stars', value: intelData.totalStars, icon: Star, color: 'text-yellow-400' },
+                        { label: 'Followers', value: intelData.followers, icon: Users, color: 'text-teal-400' },
+                        { label: 'Following', value: intelData.following, icon: Users, color: 'text-slate-400' },
+                      ].map(stat => (
+                        <div key={stat.label} className="bg-black/40 rounded-xl p-3 text-center border border-white/5">
+                          <stat.icon size={14} className={`${stat.color} mx-auto mb-1.5`} />
+                          <p className="text-lg font-black text-white">{stat.value || 0}</p>
+                          <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">{stat.label}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Top Languages */}
+                    {intelData.topLangs?.length > 0 && (
+                      <div>
+                        <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <Code size={12} /> Top Languages
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {intelData.topLangs.map(([lang, count]) => (
+                            <span key={lang} className="px-3 py-1.5 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold rounded-lg border border-emerald-500/20 flex items-center gap-1.5">
+                              {lang}
+                              <span className="text-emerald-500/50 text-[9px]">{count} repos</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Top Repos */}
+                    {intelData.topRepos?.length > 0 && (
+                      <div>
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <BookOpen size={12} /> Notable Projects
+                        </h4>
+                        <div className="space-y-2">
+                          {intelData.topRepos.map(repo => (
+                            <a key={repo.id} href={repo.html_url} target="_blank" rel="noopener noreferrer" className="block p-3 bg-black/30 border border-white/5 rounded-lg hover:border-emerald-500/30 transition-all group">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">{repo.name}</span>
+                                <div className="flex items-center gap-1 text-yellow-500 text-[10px]">
+                                  <Star size={10} /> {repo.stargazers_count}
+                                </div>
+                              </div>
+                              {repo.description && <p className="text-[10px] text-slate-500 mt-1 truncate">{repo.description}</p>}
+                              <div className="flex items-center gap-2 mt-1.5">
+                                {repo.language && <span className="text-[9px] text-emerald-400/60 font-semibold">{repo.language}</span>}
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

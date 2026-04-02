@@ -42,10 +42,11 @@ def get_single_project(project_id: str):
                 "email": profile.get("email", "No email"),
                 "branch": profile.get("branch", ""),
                 "skills": profile.get("skills", []),
-                "bio": profile.get("bio", "")
+                "bio": profile.get("bio", ""),
+                "github": profile.get("github", "")
             })
         else:
-            members_resolved.append({"uid": uid, "name": "Unknown", "email": "No profile yet", "branch": "", "skills": []})
+            members_resolved.append({"uid": uid, "name": "Unknown", "email": "No profile yet", "branch": "", "skills": [], "github": ""})
             
     # Resolve join requests
     request_uids = proj.get("join_requests", [])
@@ -58,10 +59,11 @@ def get_single_project(project_id: str):
                 "name": profile.get("display_name", "Unknown"),
                 "email": profile.get("email", "No email"),
                 "branch": profile.get("branch", ""),
-                "skills": profile.get("skills", [])
+                "skills": profile.get("skills", []),
+                "github": profile.get("github", "")
             })
         else:
-            requests_resolved.append({"uid": uid, "name": "Unknown", "email": "No profile yet", "branch": "", "skills": []})
+            requests_resolved.append({"uid": uid, "name": "Unknown", "email": "No profile yet", "branch": "", "skills": [], "github": ""})
 
     proj["members_info"] = members_resolved
     proj["join_requests_info"] = requests_resolved
@@ -202,6 +204,21 @@ def get_project_members(project_id: str):
             return {"success": True, "members": resolved}
     return {"success": False, "error": "Project not found"}
 
+@router.delete("/{project_id}/members/{user_id}")
+def remove_project_member(project_id: str, user_id: str):
+    from database import get_document, update_document
+    proj = get_document('projects', project_id)
+    if not proj:
+        return {"success": False, "error": "Project not found"}
+        
+    members = proj.get("members", [])
+    if user_id in members:
+        members.remove(user_id)
+        update_document('projects', project_id, {"members": members})
+        return {"success": True}
+        
+    return {"success": False, "error": "User not in project"}
+
 @router.post("/{project_id}/match")
 def match_project(project_id: str, payload: dict):
     from database import get_document
@@ -225,6 +242,18 @@ def match_project(project_id: str, payload: dict):
     match_result = calculate_match_score(student_skills, project_reqs)
     return {"success": True, "match": match_result}
 
+class UpdateProjectGithub(BaseModel):
+    github_url: str
+
+@router.put("/{project_id}/github")
+def update_project_github(project_id: str, payload: UpdateProjectGithub):
+    from database import update_document, get_document
+    proj = get_document('projects', project_id)
+    if not proj:
+        return {"success": False, "error": "Project not found"}
+    update_document('projects', project_id, {"github_url": payload.github_url})
+    return {"success": True}
+
 @router.delete("/{project_id}")
 def delete_project(project_id: str):
     from database import delete_document
@@ -232,3 +261,4 @@ def delete_project(project_id: str):
     if success:
         return {"success": True}
     return {"success": False, "error": "Project not found"}
+

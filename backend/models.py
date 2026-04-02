@@ -10,6 +10,7 @@ class UserBase(BaseModel):
     branch: str  # e.g., CSE, Business, Design
     skills: List[str] = []
     bio: Optional[str] = ""
+    github: Optional[str] = ""
 
 class ProjectBase(BaseModel):
     id: Optional[str] = None
@@ -21,6 +22,7 @@ class ProjectBase(BaseModel):
     upvotes: int = 0
     upvoted_by: List[str] = []
     comments: List[dict] = []
+    github_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class PostBase(BaseModel):

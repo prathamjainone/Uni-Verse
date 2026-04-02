@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Terminal, MessageSquare, Video, VideoOff, PhoneOff, Monitor, Code } from 'lucide-react';
+import { Send, Terminal, MessageSquare, Video, VideoOff, PhoneOff, Monitor, Code, Github, ExternalLink, GitCommit, GitPullRequest, RefreshCw, Link2, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import API_URL from '../api';
 
@@ -24,6 +24,11 @@ function VideoPlayer({ stream, muted, label, isScreenShare }) {
 
 export default function WarRoomChat({ project, user }) {
   const projectId = project.id;
+  const isLeader = project.owner_uid === user?.uid;
+
+  // --- Left Pane Tab ---
+  const [leftTab, setLeftTab] = useState('notes'); // 'notes' | 'repo'
+
   // --- Chat & Notes State (Persisted) ---
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem(`warroom_msgs_${projectId}`);
@@ -36,6 +41,15 @@ export default function WarRoomChat({ project, user }) {
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef(null);
   const socketRef = useRef(null);
+
+  // --- GitHub Repo State ---
+  const [repoUrl, setRepoUrl] = useState(project.github_url || '');
+  const [repoInput, setRepoInput] = useState('');
+  const [savingRepo, setSavingRepo] = useState(false);
+  const [commits, setCommits] = useState([]);
+  const [pulls, setPulls] = useState([]);
+  const [repoLoading, setRepoLoading] = useState(false);
+  const [repoError, setRepoError] = useState('');
 
   // --- WebRTC State ---
   const [inCall, setInCall] = useState(false);
@@ -50,6 +64,80 @@ export default function WarRoomChat({ project, user }) {
   // --- Persistence Hooks ---
   useEffect(() => { localStorage.setItem(`warroom_msgs_${projectId}`, JSON.stringify(messages)); }, [messages, projectId]);
   useEffect(() => { localStorage.setItem(`warroom_notes_${projectId}`, sharedNotes); }, [sharedNotes, projectId]);
+
+  // --- Parse GitHub owner/repo ---
+  const parseGithubRepo = (url) => {
+    if (!url) return null;
+    try {
+      // Handle full URLs or owner/repo format
+      const cleaned = url.replace(/\.git$/, '').replace(/\/$/, '');
+      if (cleaned.includes('github.com')) {
+        const parts = new URL(cleaned.startsWith('http') ? cleaned : `https://${cleaned}`).pathname.split('/').filter(Boolean);
+        if (parts.length >= 2) return { owner: parts[0], repo: parts[1] };
+      } else if (cleaned.includes('/')) {
+        const [owner, repo] = cleaned.split('/');
+        if (owner && repo) return { owner, repo };
+      }
+    } catch {}
+    return null;
+  };
+
+  // --- Fetch GitHub Data ---
+  const fetchRepoData = async (url) => {
+    const parsed = parseGithubRepo(url || repoUrl);
+    if (!parsed) { setRepoError('Invalid repo URL'); return; }
+    setRepoLoading(true);
+    setRepoError('');
+    try {
+      const [commitsRes, pullsRes] = await Promise.all([
+        fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits?per_page=10`),
+        fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/pulls?state=open&per_page=5`)
+      ]);
+      if (!commitsRes.ok) throw new Error(`Repo not found or private`);
+      const commitsData = await commitsRes.json();
+      const pullsData = pullsRes.ok ? await pullsRes.json() : [];
+      setCommits(commitsData);
+      setPulls(pullsData);
+    } catch (err) {
+      setRepoError(err.message);
+      setCommits([]);
+      setPulls([]);
+    } finally {
+      setRepoLoading(false);
+    }
+  };
+
+  // Auto-fetch when repo tab is selected and URL exists
+  useEffect(() => {
+    if (leftTab === 'repo' && repoUrl) {
+      fetchRepoData(repoUrl);
+    }
+  }, [leftTab, repoUrl]);
+
+  // Sync repoUrl from project prop
+  useEffect(() => {
+    if (project.github_url) setRepoUrl(project.github_url);
+  }, [project.github_url]);
+
+  const saveRepoUrl = async () => {
+    if (!repoInput.trim()) return;
+    setSavingRepo(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/github`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ github_url: repoInput.trim() })
+      });
+      if (res.ok) {
+        setRepoUrl(repoInput.trim());
+        fetchRepoData(repoInput.trim());
+      }
+    } catch (err) {
+      console.error("Failed to save repo URL", err);
+    } finally {
+      setSavingRepo(false);
+    }
+  };
 
   // --- WebSocket Setup ---
   useEffect(() => {
@@ -178,7 +266,6 @@ export default function WarRoomChat({ project, user }) {
       const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" } });
       const screenTrack = displayStream.getVideoTracks()[0];
 
-      // Broadcast new track to all existing peers
       Object.values(peerConnections.current).forEach(pc => {
         const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
         if (sender) {
@@ -186,13 +273,12 @@ export default function WarRoomChat({ project, user }) {
         }
       });
 
-      // Update local view
       if (localStreamRef.current) {
         const newStream = new MediaStream([screenTrack]);
         const audioTracks = localStreamRef.current.getAudioTracks();
         if (audioTracks.length > 0) newStream.addTrack(audioTracks[0]);
         setLocalStream(newStream);
-        localStreamRef.current = newStream; // Important so new joiners get the screen!
+        localStreamRef.current = newStream;
       }
       setIsScreenSharing(true);
 
@@ -252,31 +338,205 @@ export default function WarRoomChat({ project, user }) {
     }
   };
 
+  // --- Helper: time ago ---
+  const timeAgo = (dateStr) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  };
+
+  const parsed = parseGithubRepo(repoUrl);
+  const githubDevUrl = parsed ? `https://github.dev/${parsed.owner}/${parsed.repo}` : null;
+  const githubWebUrl = parsed ? `https://github.com/${parsed.owner}/${parsed.repo}` : null;
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 h-[800px]">
       
-      {/* Left Pane: Notes & Code Editor */}
+      {/* Left Pane: Notes & Repo Tabs */}
       <div className="flex-1 flex flex-col bg-black/40 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-xl shadow-2xl relative">
-        <div className="p-4 bg-gradient-to-r from-teal-500/10 to-indigo-500/10 border-b border-white/5 flex items-center justify-between z-10 relative">
-           <div className="flex items-center gap-3">
-             <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400"><Code size={18} /></div>
-             <div>
-               <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">Collaborative Notes</h3>
-               <div className="flex items-center gap-1.5 mt-0.5">
-                 <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-teal-500 animate-pulse' : 'bg-red-500'}`}></div>
-                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Live Socket Sync</span>
-               </div>
-             </div>
-           </div>
+        {/* Tab Header */}
+        <div className="p-4 bg-gradient-to-r from-teal-500/10 to-indigo-500/10 border-b border-white/5 z-10 relative">
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setLeftTab('notes')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                leftTab === 'notes' 
+                  ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 shadow-lg' 
+                  : 'text-slate-500 hover:text-slate-300 border border-transparent'
+              }`}
+            >
+              <Code size={14} /> Live Notes
+            </button>
+            <button 
+              onClick={() => setLeftTab('repo')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                leftTab === 'repo' 
+                  ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 shadow-lg' 
+                  : 'text-slate-500 hover:text-slate-300 border border-transparent'
+              }`}
+            >
+              <Github size={14} /> Project Repo
+            </button>
+            
+            <div className="ml-auto flex items-center gap-1.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-teal-500 animate-pulse' : 'bg-red-500'}`}></div>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">
+                {isConnected ? 'Connected' : 'Offline'}
+              </span>
+            </div>
+          </div>
         </div>
-        <textarea
-          value={sharedNotes}
-          onChange={handleNotesChange}
-          placeholder="// Type code snippets, meeting notes, action items...&#10;// Changes are broadcast instantly."
-          className="flex-1 w-full bg-transparent text-slate-300 font-mono text-sm p-6 resize-none focus:outline-none focus:ring-inset focus:ring-1 focus:ring-teal-500/50 transition-colors placeholder:text-slate-600 leading-relaxed"
-          disabled={!isConnected}
-          spellCheck="false"
-        />
+
+        {/* Tab Content */}
+        {leftTab === 'notes' ? (
+          <textarea
+            value={sharedNotes}
+            onChange={handleNotesChange}
+            placeholder={"// Type code snippets, meeting notes, action items...\n// Changes are broadcast instantly to all team members."}
+            className="flex-1 w-full bg-transparent text-slate-300 font-mono text-sm p-6 resize-none focus:outline-none focus:ring-inset focus:ring-1 focus:ring-teal-500/50 transition-colors placeholder:text-slate-600 leading-relaxed"
+            disabled={!isConnected}
+            spellCheck="false"
+          />
+        ) : (
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            {/* Repo Setup (if no URL set) */}
+            {!repoUrl ? (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center border border-emerald-500/20">
+                  <Github size={28} className="text-emerald-400" />
+                </div>
+                <h3 className="text-lg font-black text-white">Connect Your Repository</h3>
+                <p className="text-xs text-slate-400 max-w-sm">Link your team's GitHub repository to see live commits, open PRs, and access the browser IDE.</p>
+                
+                {isLeader ? (
+                  <div className="w-full max-w-sm space-y-3">
+                    <input
+                      type="text"
+                      placeholder="github.com/username/repo or owner/repo"
+                      value={repoInput}
+                      onChange={e => setRepoInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveRepoUrl()}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <button 
+                      onClick={saveRepoUrl} 
+                      disabled={savingRepo || !repoInput.trim()}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
+                    >
+                      {savingRepo ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                      {savingRepo ? 'Saving...' : 'Link Repository'}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">Ask your project leader to link a repository.</p>
+                )}
+              </div>
+            ) : (
+              /* Repo Dashboard */
+              <>
+                {/* Repo Header */}
+                <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border border-emerald-500/15 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Github size={16} className="text-emerald-400" />
+                      <span className="text-sm font-black text-white">{parsed?.owner}/{parsed?.repo}</span>
+                    </div>
+                    <button onClick={() => fetchRepoData()} className="p-1.5 text-slate-500 hover:text-white transition-colors" title="Refresh">
+                      <RefreshCw size={12} className={repoLoading ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    {githubWebUrl && (
+                      <a href={githubWebUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-bold text-slate-300 transition-colors">
+                        <ExternalLink size={10} /> View on GitHub
+                      </a>
+                    )}
+                    {githubDevUrl && (
+                      <a href={githubDevUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/20 rounded-lg text-[10px] font-bold text-indigo-300 transition-colors">
+                        <Code size={10} /> Open in VS Code
+                      </a>
+                    )}
+                    {isLeader && (
+                      <button onClick={() => { setRepoUrl(''); setRepoInput(''); }} className="ml-auto text-[10px] text-red-400/50 hover:text-red-400 transition-colors">
+                        Unlink
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {repoError && (
+                  <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                    ⚠ {repoError}
+                  </div>
+                )}
+
+                {/* Open Pull Requests */}
+                {pulls.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <GitPullRequest size={12} /> Open Pull Requests ({pulls.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {pulls.map(pr => (
+                        <a key={pr.id} href={pr.html_url} target="_blank" rel="noopener noreferrer" className="block p-3 bg-black/30 border border-white/5 rounded-lg hover:border-emerald-500/30 transition-all group">
+                          <div className="flex items-center gap-2">
+                            <span className="text-emerald-400 text-[10px] font-bold">#{pr.number}</span>
+                            <span className="text-xs text-slate-300 font-semibold group-hover:text-white transition-colors truncate">{pr.title}</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className="text-[9px] text-slate-500">{pr.user?.login}</span>
+                            <span className="text-[9px] text-slate-600">• {timeAgo(pr.created_at)}</span>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Commits */}
+                <div>
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <GitCommit size={12} /> Recent Commits
+                  </h4>
+                  {repoLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <RefreshCw size={16} className="text-slate-500 animate-spin" />
+                    </div>
+                  ) : commits.length > 0 ? (
+                    <div className="relative">
+                      {/* Timeline line */}
+                      <div className="absolute left-[11px] top-3 bottom-3 w-px bg-gradient-to-b from-emerald-500/30 via-slate-700/30 to-transparent"></div>
+                      
+                      <div className="space-y-1">
+                        {commits.map((c, i) => (
+                          <div key={c.sha} className="flex items-start gap-3 p-2 rounded-lg hover:bg-white/[0.02] transition-colors group relative">
+                            {/* Timeline dot */}
+                            <div className={`w-[7px] h-[7px] rounded-full mt-1.5 shrink-0 ring-2 ring-black/80 ${i === 0 ? 'bg-emerald-400' : 'bg-slate-600'}`}></div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-slate-300 leading-snug truncate group-hover:text-white transition-colors">{c.commit?.message?.split('\n')[0]}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[9px] text-slate-500 font-semibold">{c.commit?.author?.name || c.author?.login}</span>
+                                <span className="text-[9px] text-slate-600">• {timeAgo(c.commit?.author?.date)}</span>
+                                <a href={c.html_url} target="_blank" rel="noopener noreferrer" className="ml-auto text-[9px] text-slate-600 hover:text-teal-400 transition-colors font-mono opacity-0 group-hover:opacity-100">
+                                  {c.sha?.slice(0, 7)}
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-600 italic text-center py-6">No commits found.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Right Pane: Media & Chat */}
