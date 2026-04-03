@@ -1,0 +1,48 @@
+{
+  "_ANTIGRAVITY_HACKATHON_COORDINATION_INSTRUCTIONS_": [
+    "CRITICAL: ALL ANTIGRAVITY AGENTS MUST READ AND UPDATE THIS FILE.",
+    "1. READ FIRST: At the start of every new session or prompt, read this file to understand the current global state of the project.",
+    "2. UPDATE ON EVERY ITERATION: Whenever you (an Antigravity agent) complete a command, update a feature, or finish a task, you MUST update this JSON file.",
+    "3. WHY: The team is working across multiple devices with different Antigravity instances. This file is the single source of truth to avoid duplicate work and merge conflicts.",
+    "4. HOW: Update 'latest_context', move items from 'pending_tasks' to 'completed_tasks', update 'current_workflow_stage', and explicitly log what you did in 'agent_changelog'."
+  ],
+  "project_name": "Uni-Verse",
+  "project_description": "A university team formation system designed to bridge the networking gap. A centralized ecosystem combining Reddit-like community structure with comprehensive project management utility and real-time collaboration tools.",
+  "tech_stack": {
+    "frontend": "React + Vite + Tailwind CSS",
+    "backend": "FastAPI (Python, WebSockets) for moderation, AI matching, and chat",
+    "database": "Firebase Firestore",
+    "auth": "Firebase Google Auth",
+    "ai": "Groq Llama-3.3"
+  },
+  "current_workflow_stage": "Feature Integration & Deployment Prep",
+  "key_features": [
+    "Skill-based connections & AI Matchmaking (Groq Llama 3.3)",
+    "Project showcasing & Verified student teams",
+    "Real-time War Room (WebSockets Chat, WebRTC Video/Audio, Live Notes)",
+    "GitHub Integration (Live Commits, PRs, github.dev IDE link)",
+    "AI-powered GitHub Analytics Applicant Vetting (Intel Modal)"
+  ],
+  "latest_context": "Integrated Real-time War Room with WebSockets and WebRTC for live team collaboration. Added GitHub integration for repositories and applicant vetting (Intel Modal) for project owners.",
+  "completed_tasks": [
+    "Build glassmorphic UI components and pages (Home, Discover)",
+    "Implement Backend DB logic (Firebase + In-Memory Fallback)",
+    "Implement Frontend AuthContext",
+    "Real-time War Room Chat integration (WebSockets)",
+    "WebRTC Voice/Video call UI and Huddle Logic in War Room",
+    "GitHub repository tracking (commits, PRs) in War Room",
+    "GitHub Intel Modal for applicant vetting"
+  ],
+  "pending_tasks": [
+    "Finalize Firebase Auth configs across all teammates' local setups",
+    "Testing WebSocket connection scaling on Render",
+    "Deploy backend to Render and Frontend to Vercel",
+    "Final Pitch & Demo Recording"
+  ],
+  "agent_changelog": [
+    {
+      "timestamp": "2026-04-03T17:15:00",
+      "agent_action": "Updated antigravity_state.json to act as a globally shared context file for cross-device agent coordination. Added explicit update instruction triggers."
+    }
+  ]
+}

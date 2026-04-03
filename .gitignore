@@ -6,7 +6,6 @@ backend/service-account.json
 backend/universe.json
 backend/groq_error.txt
 backend/out.txt
-antigravity_state.json
 
 # Python
 backend/__pycache__/
