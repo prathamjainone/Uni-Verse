@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import API_URL from '../api';
 import WarRoomChat from '../components/WarRoomChat';
+import ContributionTracker from '../components/ContributionTracker';
 
 export default function ProjectDetails() {
   const { id } = useParams();
@@ -285,6 +286,14 @@ export default function ProjectDetails() {
                 Team War Room <Sparkles size={14} />
               </button>
             )}
+            {isMember && (
+              <button 
+                onClick={() => setActiveTab("contributions")}
+                className={`px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'contributions' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Contributions <BarChart3 size={14} />
+              </button>
+            )}
           </div>
 
           <AnimatePresence mode="wait">
@@ -351,7 +360,7 @@ export default function ProjectDetails() {
                   )}
                 </div>
               </motion.div>
-            ) : (
+            ) : activeTab === 'warroom' ? (
               <motion.div 
                 key="warroom"
                 initial={{ opacity: 0, x: 10 }}
@@ -359,6 +368,15 @@ export default function ProjectDetails() {
                 exit={{ opacity: 0, x: -10 }}
               >
                 <WarRoomChat project={project} user={user} />
+              </motion.div>
+            ) : (
+              <motion.div 
+                key="contributions"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+              >
+                <ContributionTracker projectId={id} isOwner={user && project.owner_uid === user.uid} />
               </motion.div>
             )}
           </AnimatePresence>

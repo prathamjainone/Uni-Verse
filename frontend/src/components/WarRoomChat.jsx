@@ -82,7 +82,7 @@ export default function WarRoomChat({ project, user }) {
     return null;
   };
 
-  // --- Fetch GitHub Data ---
+  // --- Fetch GitHub Data (via backend proxy to avoid rate limits) ---
   const fetchRepoData = async (url) => {
     const parsed = parseGithubRepo(url || repoUrl);
     if (!parsed) { setRepoError('Invalid repo URL'); return; }
@@ -90,8 +90,8 @@ export default function WarRoomChat({ project, user }) {
     setRepoError('');
     try {
       const [commitsRes, pullsRes] = await Promise.all([
-        fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits?per_page=10`),
-        fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/pulls?state=open&per_page=5`)
+        fetch(`${API_URL}/api/vetting/github-proxy/${parsed.owner}/${parsed.repo}/commits?per_page=10`),
+        fetch(`${API_URL}/api/vetting/github-proxy/${parsed.owner}/${parsed.repo}/pulls?state=open&per_page=5`)
       ]);
       if (!commitsRes.ok) throw new Error(`Repo not found or private`);
       const commitsData = await commitsRes.json();
