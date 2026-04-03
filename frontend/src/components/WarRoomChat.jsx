@@ -1,19 +1,69 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Terminal, MessageSquare, Video, VideoOff, PhoneOff, Monitor, Code, Github, ExternalLink, GitCommit, GitPullRequest, RefreshCw, Link2, Save } from 'lucide-react';
+import { Send, Terminal, MessageSquare, Video, VideoOff, PhoneOff, Monitor, Code, Github, ExternalLink, GitCommit, GitPullRequest, RefreshCw, Link2, Save, Mic, MicOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import API_URL from '../api';
 
 // --- Small Helper for Video ---
 function VideoPlayer({ stream, muted, label, isScreenShare }) {
   const videoRef = useRef();
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
 
+  useEffect(() => {
+    if (!stream || !stream.getAudioTracks().length) return;
+
+    let audioContext;
+    let analyser;
+    let microphone;
+    let javascriptNode;
+
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      
+      // Some browsers require stream to be active before creating source
+      microphone = audioContext.createMediaStreamSource(stream);
+      javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+
+      analyser.smoothingTimeConstant = 0.8;
+      analyser.fftSize = 1024;
+
+      microphone.connect(analyser);
+      analyser.connect(javascriptNode);
+      javascriptNode.connect(audioContext.destination);
+
+      javascriptNode.onaudioprocess = () => {
+        const array = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(array);
+        let values = 0;
+        for (let i = 0; i < array.length; i++) {
+          values += array[i];
+        }
+        const average = values / array.length;
+        setIsSpeaking(average > 0.8); // Increased sensitivity threshold
+      };
+    } catch (err) {
+      console.warn("Audio Context init skipped for stream", err);
+    }
+
+    return () => {
+      if (javascriptNode) {
+        javascriptNode.onaudioprocess = null;
+        javascriptNode.disconnect();
+      }
+      if (analyser) analyser.disconnect();
+      if (microphone) microphone.disconnect();
+      if (audioContext && audioContext.state !== 'closed') audioContext.close().catch(() => {});
+    };
+  }, [stream]);
+
   return (
-    <div className={`relative bg-black/80 rounded-xl overflow-hidden shadow-xl border border-white/10 aspect-video group ${isScreenShare ? 'col-span-full aspect-auto h-64' : ''}`}>
+    <div className={`relative bg-black/80 rounded-xl overflow-hidden aspect-video group transition-all duration-300 ${isScreenShare ? 'col-span-full aspect-auto h-64' : ''} ${isSpeaking ? 'border-2 border-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.6)]' : 'border border-white/10 shadow-xl'}`}>
       <video ref={videoRef} autoPlay playsInline muted={muted} className={`w-full h-full ${isScreenShare ? 'object-contain bg-black' : 'object-cover'}`} />
       <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 backdrop-blur rounded flex items-center gap-2 text-[10px] text-white font-bold tracking-wider uppercase">
         {isScreenShare && <Monitor size={10} className="text-teal-400" />} {label}
@@ -58,6 +108,98 @@ export default function WarRoomChat({ project, user }) {
   const [remoteStreams, setRemoteStreams] = useState({});
   const localStreamRef = useRef(null);
   const peerConnections = useRef({});
+  const [isMuted, setIsMuted] = useState(false);
+
+  const toggleMute = () => {
+    if (localStreamRef.current) {
+        const audioTracks = localStreamRef.current.getAudioTracks();
+        if (audioTracks.length > 0) {
+            audioTracks[0].enabled = !audioTracks[0].enabled;
+            setIsMuted(!audioTracks[0].enabled);
+        }
+    }
+  };
+
+  // --- MOM Generator State ---
+  const [isMOMEnabled, setIsMOMEnabled] = useState(false);
+  const [isGeneratingMOM, setIsGeneratingMOM] = useState(false);
+  const isMOMEnabledRef = useRef(false);
+  const sessionTranscripts = useRef([]);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    
+    recognition.onresult = (event) => {
+        const text = event.results[event.results.length - 1][0].transcript;
+        console.log("🗣️ Speech Captured:", text.trim());
+        
+        if (text.trim() && socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            socketRef.current.send(JSON.stringify({ 
+                type: 'transcript', 
+                sender: user?.uid, 
+                user: user?.display_name, 
+                text: text.trim() 
+            }));
+        }
+    };
+    
+    recognition.onend = () => {
+        if (isMOMEnabledRef.current) {
+            try { recognition.start(); } catch(e) {}
+        }
+    };
+    recognitionRef.current = recognition;
+
+    return () => {
+        if (recognitionRef.current) recognitionRef.current.stop();
+    };
+  }, [user]);
+
+  const toggleMOM = () => {
+      const newState = !isMOMEnabled;
+      setIsMOMEnabled(newState);
+      isMOMEnabledRef.current = newState;
+      
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({ type: 'mom_control', enabled: newState }));
+      }
+      
+      if (newState && recognitionRef.current) {
+          try { recognitionRef.current.start(); } catch(e) {}
+      } else if (!newState && recognitionRef.current) {
+          recognitionRef.current.stop();
+      }
+  };
+
+  const generateMOM = async () => {
+    if (!sessionTranscripts.current.length) return;
+    setIsGeneratingMOM(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/generate_mom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcripts: sessionTranscripts.current })
+      });
+      const data = await res.json();
+      if (data.success) {
+         const newNotes = sharedNotes + (sharedNotes ? "\n\n" : "") + data.mom + "\n\n";
+         setSharedNotes(newNotes);
+         if (socketRef.current && isConnected) {
+             socketRef.current.send(JSON.stringify({ type: 'editor_sync', sender: user.uid, payload: newNotes }));
+         }
+         sessionTranscripts.current = [];
+      }
+    } catch (err) {
+      console.error("MOM Gen Error", err);
+    } finally {
+      setIsGeneratingMOM(false);
+    }
+  };
 
   const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 
@@ -157,6 +299,23 @@ export default function WarRoomChat({ project, user }) {
         return;
       }
       
+      if (data.type === 'mom_control') {
+          const enabled = data.enabled;
+          setIsMOMEnabled(enabled);
+          isMOMEnabledRef.current = enabled;
+          if (enabled && recognitionRef.current) {
+              try { recognitionRef.current.start(); } catch(e) {}
+          } else if (!enabled && recognitionRef.current) {
+              recognitionRef.current.stop();
+          }
+          return;
+      }
+      
+      if (data.type === 'transcript') {
+          sessionTranscripts.current.push(`${data.user}: ${data.text}`);
+          return;
+      }
+      
       if (data.type === 'editor_sync' && data.sender !== user.uid) {
         setSharedNotes(data.payload);
         return;
@@ -251,14 +410,21 @@ export default function WarRoomChat({ project, user }) {
   // --- Huddle Controls ---
   const startHuddle = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (e) {
+        // Fallback to audio if video camera is unavailable or denied
+        stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+      }
+      setIsMuted(false);
       setLocalStream(stream);
       localStreamRef.current = stream;
       setInCall(true);
-      if (socketRef.current.readyState === WebSocket.OPEN) {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
         socketRef.current.send(JSON.stringify({ type: 'webrtc_join', sender: user.uid }));
       }
-    } catch (err) { alert("Camera permissions denied."); }
+    } catch (err) { alert("Camera/Microphone permissions denied or devices not found."); }
   };
 
   const shareScreen = async () => {
@@ -546,6 +712,28 @@ export default function WarRoomChat({ project, user }) {
             <h3 className="text-sm font-black text-white uppercase tracking-widest flex items-center gap-2">
                <Terminal size={16} className="text-indigo-400" /> WebRTC Comms
             </h3>
+            {isLeader && (
+              <div className="flex gap-2">
+                {sessionTranscripts.current.length > 0 && !isMOMEnabled && (
+                  <button onClick={generateMOM} disabled={isGeneratingMOM} className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 bg-purple-500/20 text-purple-400 border border-purple-500/50 rounded hover:bg-purple-500/30 transition-colors">
+                    {isGeneratingMOM ? 'Generating...' : 'Generate MOM'}
+                  </button>
+                )}
+                <button 
+                   onClick={toggleMOM}
+                   className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded border transition-colors ${
+                       isMOMEnabled 
+                         ? 'bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30' 
+                         : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 hover:bg-emerald-500/30'
+                   }`}
+                >
+                   <span className="flex items-center gap-1">
+                     {isMOMEnabled && <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>}
+                     {isMOMEnabled ? 'Stop MOM Rec' : 'Start MOM Rec'}
+                   </span>
+                </button>
+              </div>
+            )}
           </div>
           
           <div className="flex items-center gap-2">
@@ -555,6 +743,13 @@ export default function WarRoomChat({ project, user }) {
               </button>
             ) : (
               <>
+                <button 
+                  onClick={toggleMute} 
+                  className={`flex items-center justify-center gap-2 px-3 py-2 ${isMuted ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30 border border-red-500/50' : 'bg-slate-700/50 text-white hover:bg-slate-700 border border-slate-600/50'} text-xs font-bold rounded-lg transition-all`}
+                  title={isMuted ? "Unmute" : "Mute"}
+                >
+                  {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+                </button>
                 {!isScreenSharing ? (
                    <button onClick={shareScreen} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-lg transition-all">
                      <Monitor size={14} /> Present Screen

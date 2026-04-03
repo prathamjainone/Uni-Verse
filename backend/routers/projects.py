@@ -262,3 +262,19 @@ def delete_project(project_id: str):
         return {"success": True}
     return {"success": False, "error": "Project not found"}
 
+class GenerateMOMRequest(BaseModel):
+    transcripts: List[str]
+
+@router.post("/{project_id}/generate_mom")
+def generate_mom(project_id: str, payload: GenerateMOMRequest):
+    from services.ai_mom import generate_mom_from_transcripts
+    
+    # We don't necessarily need to check if project exists, but good practice
+    from database import get_document
+    proj = get_document('projects', project_id)
+    if not proj:
+        return {"success": False, "error": "Project not found"}
+        
+    mom_text = generate_mom_from_transcripts(payload.transcripts)
+    return {"success": True, "mom": mom_text}
+
