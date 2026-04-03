@@ -22,12 +22,14 @@
 | 🔐 **Google Auth** | One-click sign-in with Firebase Authentication |
 | 🧑‍💻 **Onboarding Flow** | New users fill in branch, year, skills, GitHub, and bio |
 | 🚀 **Discover Teams** | Browse projects posted by fellow students |
-| 🤖 **AI Matchmaking** | Groq Llama-3.3 scores your skills against project requirements |
+| 🤖 **AI Matchmaking** | Groq Llama-3.1 scores your skills against project requirements |
+| 🧠 **Team Intelligence** | Professional compatibility reports using weighted rules & AI |
+| 👑 **Project Blueprint** | Admin controls for difficulty, project type, and min roles |
 | 💬 **Community Feed** | Post updates, comment, and engage with the university network |
 | 🔥 **Real-time War Room** | Dedicated collaborative space for teams with live chat, WebRTC video/audio, screen sharing, and live synced notes |
 | 🐙 **GitHub Integration & IDE** | Link your team repository to monitor live commits, PRs, and launch browser-based VS Code (github.dev) instantly |
 | 📈 **GitHub Analytics Intel** | Vet applicants and team members effortlessly with an instant popup dashboard of their GitHub stats, stars, repos, and top languages |
-| 👑 **Project Admin Controls** | Project owners have fine-grained control to accept/reject applicants, remove members, and manage repository links |
+| 👑 **Admin Controls** | Project owners accept/reject applicants, remove members, and set technical blueprints |
 | 👥 **Join / Leave Teams** | Request to join any open project |
 | 🗑️ **Full CRUD** | Create, read, update, and delete posts & projects |
 | 📋 **Member Dashboard** | Project owners see joined members with contact details |
@@ -146,7 +148,9 @@ npm run dev
 | `POST` | `/api/projects/{id}/requests/{user_id}/reject`| Reject a join request |
 | `DELETE` | `/api/projects/{id}/members/{user_id}`| Remove a project member |
 | `PUT` | `/api/projects/{id}/github` | Set or update the linked GitHub repository |
+| `PATCH` | `/api/projects/{id}/requirements` | Update project blueprint (type, difficulty, min roles) |
 | `POST` | `/api/projects/{id}/match` | AI skill matching |
+| `POST` | `/api/projects/{id}/team-analysis` | Holistic team compatibility analysis (Local + AI) |
 | `GET` | `/api/projects/{id}/members` | Get member details (owner only) |
 | `DELETE` | `/api/projects/{id}` | Delete a project |
 | `GET` | `/api/community` | List community posts |

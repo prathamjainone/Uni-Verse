@@ -45,9 +45,9 @@ export default function Discover() {
 
   const filteredProjects = projects.filter(p => {
     const term = search.toLowerCase();
-    return p.title.toLowerCase().includes(term) || 
-           p.description.toLowerCase().includes(term) ||
-           p.required_skills.some(skill => skill.toLowerCase().includes(term));
+    return (p.title || '').toLowerCase().includes(term) || 
+           (p.description || '').toLowerCase().includes(term) ||
+           (p.required_skills || []).some(skill => (skill || '').toLowerCase().includes(term));
   });
 
   return (

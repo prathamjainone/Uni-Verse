@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Rahul",
+    "skills": ["React", "Tailwind", "JavaScript", "HTML", "CSS"],
+    "role": "Frontend",
+    "experience_level": "Intermediate",
+    "years_exp": 2,
+    "tech_stack_familiarity": "High"
+  },
+  {
+    "name": "Aisha",
+    "skills": ["Node.js", "Express", "PostgreSQL", "API Design", "Docker"],
+    "role": "Backend",
+    "experience_level": "Senior",
+    "years_exp": 5,
+    "tech_stack_familiarity": "Expert"
+  },
+  {
+    "name": "Prem",
+    "skills": ["Python", "PyTorch", "Data Analysis", "SQL", "Scikit-Learn"],
+    "role": "Data/ML",
+    "experience_level": "Junior",
+    "years_exp": 1,
+    "tech_stack_familiarity": "Moderate"
+  },
+  {
+    "name": "Sanya",
+    "skills": ["React", "CSS", "UI/UX", "Figma"],
+    "role": "Frontend",
+    "experience_level": "Junior",
+    "years_exp": 1,
+    "tech_stack_familiarity": "Moderate"
+  }
+]

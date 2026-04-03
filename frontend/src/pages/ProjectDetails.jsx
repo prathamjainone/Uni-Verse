@@ -24,6 +24,13 @@ export default function ProjectDetails() {
   const [matchResult, setMatchResult] = useState(null);
   const [isMatching, setIsMatching] = useState(false);
   const [activeTab, setActiveTab] = useState("discussion"); // discussion or warroom
+  
+  // --- Applicant Compatibility State ---
+  const [applicantMatches, setApplicantMatches] = useState({}); // { [uid]: { score, reason, loading } }
+
+  // --- Team Intelligence State ---
+  const [teamAnalysis, setTeamAnalysis] = useState(null);
+  const [isAnalyzingTeam, setIsAnalyzingTeam] = useState(false);
 
   // --- GitHub Intel Modal State ---
   const [intelModal, setIntelModal] = useState(null); // { name, github, ... } or null
@@ -54,6 +61,27 @@ export default function ProjectDetails() {
     const intervalId = setInterval(fetchProject, 5000);
     return () => clearInterval(intervalId);
   }, [id]);
+
+  useEffect(() => {
+    if (project && user && String(project.owner_uid).trim() === String(user.uid).trim()) {
+       // Match existing members
+       project.members_info?.forEach(m => {
+          if (m.uid !== project.owner_uid && applicantMatches[m.uid] === undefined) {
+             handleApplicantMatch(m.uid, m.skills);
+          }
+       });
+       // Match join requests
+       project.join_requests_info?.forEach(req => {
+          if (applicantMatches[req.uid] === undefined) {
+             handleApplicantMatch(req.uid, req.skills);
+          }
+       });
+       // Auto-trigger team analysis if not started
+       if (!teamAnalysis && !isAnalyzingTeam) {
+          handleTeamAnalysis();
+       }
+    }
+  }, [project, user, applicantMatches, teamAnalysis, isAnalyzingTeam]);
 
   const handleAddComment = async () => {
     if (!user) return login();
@@ -93,6 +121,46 @@ export default function ProjectDetails() {
       console.error("Match error", err);
     } finally {
       setIsMatching(false);
+    }
+  };
+
+  const handleApplicantMatch = async (reqUid, reqSkills) => {
+    setApplicantMatches(prev => ({ ...prev, [reqUid]: { loading: true } }));
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${id}/match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: reqUid, skills: reqSkills || [] })
+      });
+      const data = await res.json();
+      if (data.success) {
+        console.log(`[AI Match] Success for ${reqUid}:`, data.match.score);
+        setApplicantMatches(prev => ({ 
+          ...prev, 
+          [reqUid]: { score: data.match.score, reason: data.match.reason, loading: false } 
+        }));
+      } else {
+        console.warn(`[AI Match] Failed for ${reqUid}:`, data.error);
+        setApplicantMatches(prev => ({ ...prev, [reqUid]: null }));
+      }
+    } catch (err) {
+      console.error("Applicant match error", err);
+      setApplicantMatches(prev => ({ ...prev, [reqUid]: null }));
+    }
+  };
+
+  const handleTeamAnalysis = async () => {
+    setIsAnalyzingTeam(true);
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${id}/team-analysis`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.success && data.analysis) setTeamAnalysis(data.analysis);
+    } catch (err) {
+      console.error("Error fetching team analysis", err);
+    } finally {
+      setIsAnalyzingTeam(false);
     }
   };
 
@@ -201,6 +269,19 @@ export default function ProjectDetails() {
     }
   };
 
+  const radarData = project?.required_skills?.map(skill => {
+    // Check if user has this skill in their profile
+    const hasSkill = user?.skills?.some(s => s.toLowerCase() === skill.toLowerCase());
+    
+    // Instead of random, use a more deterministic approach: 
+    // 100 if has exact skill, 0 if not (AI matching handles the semantic part elsewhere)
+    return {
+      subject: skill,
+      A: hasSkill ? 100 : 0,
+      fullMark: 100,
+    };
+  }) || [];
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <div className="w-12 h-12 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin"></div>
@@ -209,12 +290,6 @@ export default function ProjectDetails() {
 
   if (!project) return null;
 
-  // Prepare Radar Data
-  const radarData = (project.required_skills || []).map(skill => ({
-    subject: skill,
-    A: user?.skills?.includes(skill) ? 100 : 20,
-    fullMark: 100,
-  }));
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -366,55 +441,58 @@ export default function ProjectDetails() {
 
         {/* RIGHT COLUMN: Sidebar */}
         <div className="space-y-6">
-          
-          {/* AI Match Card */}
-          <div className="bg-gradient-to-br from-purple-600/10 to-blue-600/10 border border-purple-500/20 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 w-24 h-24 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all"></div>
-            
-            <h4 className="text-sm font-black text-purple-300 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-              <Sparkles size={16} /> AI Match Readiness
-            </h4>
 
-            {matchResult ? (
-              <div className="space-y-4">
-                {radarData.length > 0 && (
-                  <div className="h-[200px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
-                        <PolarGrid stroke="#4a5568" />
-                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                        <RadarComponent
-                          name="Skills"
-                          dataKey="A"
-                          stroke="#8b5cf6"
-                          fill="#8b5cf6"
-                          fillOpacity={0.4}
-                        />
-                      </RadarChart>
-                    </ResponsiveContainer>
+          {/* Overall Compatibility Score (Owner Only) */}
+          {user && project && String(project.owner_uid).trim() === String(user.uid).trim() && (
+            <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 to-blue-500/5 z-0" />
+              <div className="relative z-10">
+                <div className="flex justify-between items-center mb-6">
+                  <h4 className="text-[11px] font-black text-teal-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                    <Sparkles size={14} /> Overall Compatibility
+                  </h4>
+                  <button 
+                    onClick={handleTeamAnalysis}
+                    disabled={isAnalyzingTeam}
+                    className="text-[10px] text-teal-300 font-bold bg-teal-900/30 hover:bg-teal-900/60 px-3 py-1.5 rounded transition-colors border border-teal-500/20 flex items-center gap-1.5"
+                  >
+                    {isAnalyzingTeam ? <div className="w-2 h-2 bg-teal-400 rounded-full animate-ping" /> : <Sparkles size={12} />}
+                    Refresh Semantic Score
+                  </button>
+                </div>
+
+                {teamAnalysis ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between bg-black/40 p-4 rounded-xl border border-white/5">
+                      <div>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">Semantic Match Result</p>
+                        <h3 className="text-xl font-black text-white">{teamAnalysis.team_compatibility_score}% Match</h3>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">Recommendation</p>
+                        <p className="text-xs font-bold text-teal-400">{teamAnalysis.recommendation}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-teal-500/5 border border-teal-500/10 rounded-xl p-4">
+                      <p className="text-[10px] text-teal-400 uppercase font-black tracking-widest mb-2 flex items-center gap-1.5">
+                        <MessageSquare size={12} /> AI Insights
+                      </p>
+                      <p className="text-xs text-slate-300 italic leading-relaxed">
+                        "{teamAnalysis.reasoning || 'Based on a semantic analysis of skills, project mission, and member complementarity.'}"
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-4 text-center">
+                    <p className="text-[10px] text-slate-500">Click refresh to generate compatibility score via AI.</p>
                   </div>
                 )}
-                <div className="flex justify-between items-center bg-purple-500/20 rounded-xl p-3 border border-purple-500/30">
-                  <span className="text-sm font-bold text-white">Probability</span>
-                  <span className="text-2xl font-black text-purple-400">{matchResult.score}%</span>
-                </div>
-                <p className="text-xs text-slate-300 italic leading-relaxed text-center">
-                   "{matchResult.reason}"
-                </p>
               </div>
-            ) : (
-              <div className="py-6 text-center">
-                <p className="text-slate-400 text-xs mb-4">See how your skills stack up against this project's requirements.</p>
-                <button 
-                  onClick={handleMatch}
-                  disabled={isMatching}
-                  className="w-full bg-purple-600 hover:bg-purple-500 disabled:bg-purple-900 text-white font-bold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
-                >
-                  {isMatching ? <><div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> Scoring...</> : 'Evaluate Compatibility'}
-                </button>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
+          
+          {/* No longer showing public AI Match Card per user request to keep scores for admin only */}
 
           {/* Team Members Card */}
           <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 shadow-xl">
@@ -436,18 +514,54 @@ export default function ProjectDetails() {
                     <div className="flex-1">
                       <p className="text-sm font-bold text-white leading-none mb-1">{m.name} {m.uid === project.owner_uid && <span className="text-[10px] text-teal-500 font-black ml-1">OWNER</span>}</p>
                       <p className="text-[10px] text-slate-500 truncate">{m.branch || 'University Student'}</p>
+                      
+                      {user && project && String(project.owner_uid).trim() === String(user.uid).trim() && m.uid !== project.owner_uid && (
+                        <div className="mt-3 bg-purple-900/10 border border-purple-500/10 rounded-lg p-2.5">
+                          {applicantMatches[m.uid] ? (
+                             applicantMatches[m.uid].loading ? (
+                               <div className="flex items-center gap-2 text-purple-400 text-xs font-bold animate-pulse">
+                                 <Sparkles size={12} /> Calculating semantic match via AI...
+                               </div>
+                             ) : (
+                                 <div className="flex items-center gap-4 animate-in fade-in zoom-in duration-300">
+                                   <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full border-2 border-purple-500/10" style={{background: `conic-gradient(from 0deg, #8b5cf6 ${applicantMatches[m.uid].score}%, transparent ${applicantMatches[m.uid].score}%)`}}>
+                                     <div className="w-10 h-10 bg-[#111318] rounded-full flex flex-col items-center justify-center absolute">
+                                       <span className="text-[10px] font-black text-white leading-none">{applicantMatches[m.uid].score}%</span>
+                                       <span className="text-[6px] font-black uppercase text-purple-400 tracking-tighter">
+                                         {applicantMatches[m.uid].score >= 80 ? 'High' : applicantMatches[m.uid].score >= 50 ? 'Mod' : 'Low'}
+                                       </span>
+                                     </div>
+                                   </div>
+                                   <div className="flex-1">
+                                      <p className="text-[10px] uppercase font-black tracking-widest text-purple-400 mb-0.5">AI Compatibility</p>
+                                      <p className="text-[10px] text-slate-400 italic leading-tight line-clamp-2">
+                                        "{applicantMatches[m.uid].reason}"
+                                      </p>
+                                   </div>
+                                 </div>
+                             )
+                          ) : (
+                            <button 
+                              onClick={() => handleApplicantMatch(m.uid, m.skills)}
+                              className="w-full py-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 text-[10px] font-bold uppercase tracking-widest rounded-md border border-purple-500/20 transition-colors flex justify-center items-center gap-2"
+                            >
+                              <Sparkles size={12} /> Evaluate Compatibility
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {user && project.owner_uid === user.uid && m.github && (
-                      <button onClick={() => openGithubIntel(m)} className="text-emerald-500/40 hover:text-emerald-400 transition-colors group-hover:scale-110 ml-1" title="GitHub Intel">
+                    {user && project && String(project.owner_uid).trim() === String(user.uid).trim() && m.github && (
+                      <button onClick={() => openGithubIntel(m)} className="text-emerald-500/40 hover:text-emerald-400 transition-colors group-hover:scale-110 ml-1 self-start mt-1" title="GitHub Intel">
                         <Github size={14} />
                       </button>
                     )}
-                    {user && project.owner_uid === user.uid && m.uid !== project.owner_uid && (
-                      <button onClick={() => handleRemoveMember(m.uid)} className="text-red-500/50 hover:text-red-400 transition-colors group-hover:scale-110 ml-1" title="Remove Member">
+                    {user && project && String(project.owner_uid).trim() === String(user.uid).trim() && m.uid !== project.owner_uid && (
+                      <button onClick={() => handleRemoveMember(m.uid)} className="text-red-500/50 hover:text-red-400 transition-colors group-hover:scale-110 ml-1 self-start mt-1" title="Remove Member">
                         <Trash2 size={14} />
                       </button>
                     )}
-                    <button className="text-slate-600 hover:text-white transition-colors group-hover:scale-110 ml-1">
+                    <button className="text-slate-600 hover:text-white transition-colors group-hover:scale-110 ml-1 self-start mt-1">
                       <Mail size={14} />
                     </button>
                   </div>
@@ -476,7 +590,7 @@ export default function ProjectDetails() {
           </div>
 
           {/* Pending Applications - ONLY VISIBLE TO LEADER */}
-          {user && project.owner_uid === user.uid && project.join_requests_info?.length > 0 && (
+          {user && project && String(project.owner_uid).trim() === String(user.uid).trim() && project.join_requests_info?.length > 0 && (
             <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/5 border border-yellow-500/20 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
               <div className="absolute -right-4 -top-4 w-24 h-24 bg-yellow-500/10 rounded-full blur-3xl group-hover:bg-yellow-500/20 transition-all"></div>
               
@@ -502,14 +616,51 @@ export default function ProjectDetails() {
                       )}
                     </div>
                     
-                    {req.skills && req.skills.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-4">
-                        {req.skills.slice(0,3).map(s => (
-                          <span key={s} className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-400 rounded-md border border-white/5">{s}</span>
-                        ))}
-                        {req.skills.length > 3 && <span className="text-[10px] text-slate-500 pl-1">+{req.skills.length - 3}</span>}
+                    <div className="flex flex-col gap-2 mb-4">
+                      {req.skills && req.skills.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {req.skills.slice(0,3).map(s => (
+                            <span key={s} className="px-2 py-0.5 bg-white/5 text-[10px] text-slate-400 rounded-md border border-white/5">{s}</span>
+                          ))}
+                          {req.skills.length > 3 && <span className="text-[10px] text-slate-500 pl-1">+{req.skills.length - 3}</span>}
+                        </div>
+                      )}
+
+                      {/* Dynamic Compatibility Engine */}
+                      <div className="bg-purple-900/10 border border-purple-500/10 rounded-lg p-2.5 mt-1">
+                        {applicantMatches[req.uid] ? (
+                           applicantMatches[req.uid].loading ? (
+                             <div className="flex items-center gap-2 text-purple-400 text-xs font-bold animate-pulse">
+                               <Sparkles size={12} /> Calculating semantic match via AI...
+                             </div>
+                           ) : (
+                             <div className="flex items-center gap-4 animate-in fade-in zoom-in duration-300">
+                               <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full border-2 border-purple-500/10" style={{background: `conic-gradient(from 0deg, #8b5cf6 ${applicantMatches[req.uid].score}%, transparent ${applicantMatches[req.uid].score}%)`}}>
+                                 <div className="w-10 h-10 bg-[#111318] rounded-full flex flex-col items-center justify-center absolute">
+                                   <span className="text-[10px] font-black text-white leading-none">{applicantMatches[req.uid].score}%</span>
+                                   <span className="text-[6px] font-black uppercase text-purple-400 tracking-tighter">
+                                     {applicantMatches[req.uid].score >= 80 ? 'High' : applicantMatches[req.uid].score >= 50 ? 'Mod' : 'Low'}
+                                   </span>
+                                 </div>
+                               </div>
+                               <div className="flex-1">
+                                  <p className="text-[10px] uppercase font-black tracking-widest text-purple-400 mb-0.5">AI Compatibility</p>
+                                  <p className="text-[10px] text-slate-400 italic leading-tight line-clamp-2">
+                                    "{applicantMatches[req.uid].reason}"
+                                  </p>
+                               </div>
+                             </div>
+                           )
+                        ) : (
+                          <button 
+                            onClick={() => handleApplicantMatch(req.uid, req.skills)}
+                            className="w-full py-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 text-[10px] font-bold uppercase tracking-widest rounded-md border border-purple-500/20 transition-colors flex justify-center items-center gap-2"
+                          >
+                            <Sparkles size={12} /> Evaluate Compatibility
+                          </button>
+                        )}
                       </div>
-                    )}
+                    </div>
 
                     <div className="flex gap-2">
                        <button onClick={() => handleAccept(req.uid)} className="flex-1 bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 text-xs font-bold py-2 rounded-lg border border-teal-500/20 transition-colors">
